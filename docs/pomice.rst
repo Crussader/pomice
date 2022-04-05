@@ -5,7 +5,7 @@ Pomice
 .. toctree::
    :maxdepth: 4
 
-   pomice.spotify
+   pomice.ext
 
 
 Enums
