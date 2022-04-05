@@ -1,27 +1,27 @@
-from cmath import atan
-from typing import TYPE_CHECKING, Optional, Tuple, Union, overload
+from typing import Optional, Tuple, Union, overload
 
 from discord import AutoShardedClient, Client
 from discord.ext import commands
 
 from .exceptions import NoTrack, QueueFull
-from .ext import spotify
+from .ext import spotify, deezer
 from .objects import Playlist, Track
 
-
-PlaylistType = Union[spotify.Playlist, spotify.Album, spotify.Artist]
-TrackType = Union[spotify.Track, Track]
 
 class Queue:
     """The Base Class for Queue"""
 
-    def __init__(self, ctx: commands.Context = None, limit: int = None) -> None:
-        self._ctx = ctx
+    def __init__(self, limit: int = None) -> None:
+        self._ctx = None
         self._limit = limit
-        self._player = ctx.voice_client
+        self._player = None
 
         self._queue = []
         self._current_pos = 0
+
+    def __call__(self, ctx: commands.Context):
+        self._ctx = ctx
+        self._player = ctx.voice_client
 
     @property
     def size(self):
@@ -49,7 +49,7 @@ class Queue:
         return self._ctx.bot if self._ctx else None
 
     @property
-    def current(self) -> TrackType:
+    def current(self) -> Track:
         """Returns the current song that is being Played."""
         if (self._limit is not None and self._limit >= self._current_pos) or \
            (self._limit is None and self._current_pos >= len(self._queue) - 1):
@@ -62,7 +62,7 @@ class Queue:
         return False if self._limit is None else self.size == self._limit
 
     @property
-    def next(self) -> TrackType:
+    def next(self) -> Track:
         """Property that returns the Next Track in the queue.
            Note: This does not update the position of the queue.
         """
@@ -72,11 +72,11 @@ class Queue:
         else:
             if self._limit > self._current_pos < len(self._queue) - 1:
                 return self._queue[self._current_pos + 1]
-        
+
         return None
 
     @property
-    def previous(self) -> TrackType:
+    def previous(self) -> Track:
         """Property that returns """
 
         if 0 < self._current_pos <= len(self._queue) - 1:
@@ -88,7 +88,7 @@ class Queue:
         """Internal function"""
         if self.is_full:
             raise QueueFull("Max size of Queue has been reached.")
-            
+
         self._queue.append(obj)
 
     def _extend(self, objs):
@@ -107,26 +107,26 @@ class Queue:
     @overload
     def add_tracks(
         self,
-        *tracks: TrackType
+        *tracks: Track
     ) -> None: ...
 
     @overload
     def add_tracks(
         self,
-        playlist: PlaylistType
+        playlist: Playlist
     ) -> None: ...
 
     def add_tracks(self, obj):
         """Add Tracks to a Playlist you can pass a playlist or a single Track also"""
 
-        if isinstance(obj, (Playlist, spotify.Playlist, spotify.Album, spotify.Artist)):
+        if isinstance(obj, Playlist):
             self._extend(obj.tracks)
         elif isinstance(obj, (spotify.Track, Track)):
             self._append(obj)
         elif isinstance(obj, tuple):
             self._extend(obj)
 
-    def go_next(self) -> TrackType:
+    def go_next(self) -> Track:
         """Go to the next track. This is not the same as `Queue.next` as
            this only returns the next track but this changes the position as well.
         """
@@ -137,7 +137,7 @@ class Queue:
         self._current_pos += 1
         return track
 
-    def pop(self) -> Tuple[int, TrackType]:
+    def pop(self) -> Tuple[int, Track]:
         """Pop a song from the Queue."""
         return self._current_pos, self._queue.pop(self._current_pos)
 
@@ -145,14 +145,14 @@ class Queue:
     def insert_at(
         self,
         at: int,
-        *tracks: TrackType
+        *tracks: Track
     ) -> None: ...
-    
+
     @overload
     def insert_at(
         self,
         at: int,
-        track: TrackType
+        track: Track
     ) -> None: ...
 
     def insert_at(self, at, obj):
@@ -169,5 +169,3 @@ class Queue:
                 raise QueueFull("Max size of the Queue has reached.")
             else:
                 self._queue.insert(at, obj)
-
-        

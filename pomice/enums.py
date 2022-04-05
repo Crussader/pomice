@@ -1,4 +1,5 @@
 from enum import Enum, auto
+from typing import overload
 
 
 class SearchType(Enum):

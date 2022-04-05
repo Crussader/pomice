@@ -10,14 +10,11 @@ try:
 except ImportError:
     import json
 
+from ...regex import DEEZER_URL_REGEX
 from .exceptions import DeezerRequestException, InvalidDeezerURL
 from .objects import *
 
 API_URL = "https://api.deezer.com/{type}/{id}{ext}?limit=50&index={index}"
-
-DEEZER_URL_REGEX = re.compile(
-    r"https?://www.deezer.com/(?P<type>track|album|playlist|artist)/(?P<id>[0-9]+)"
-)
 
 
 class Client:
@@ -33,6 +30,9 @@ class Client:
     def __init__(self):
         # threading will be faster since the api is slower.
         self.session = aiohttp.ClientSession()
+
+    async def close(self):
+        await self.session.close()
 
     async def search(self, *, query: str):
 

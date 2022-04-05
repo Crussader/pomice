@@ -24,3 +24,7 @@ SPOTIFY_URL_REGEX = re.compile(
 APPLE_URL_REGEX = re.compile(
     r"https?://music.apple.com/(?P<type>album|artist|track)/(?P<name>[a-zA-Z0-9]+)+/(?P<id>[0-9]+)"
 )
+
+DEEZER_URL_REGEX = re.compile(
+    r"https?://www.deezer.com/(?P<type>track|album|playlist|artist)/(?P<id>[0-9]+)"
+)

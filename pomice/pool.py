@@ -15,19 +15,17 @@ from urllib.parse import quote
 
 import aiohttp
 from discord import Client
-
 from discord.ext import commands
 
 from . import __version__
-from .ext import spotify
 from .enums import NodeAlgorithm, SearchType
 from .exceptions import (InvalidSpotifyClientAuthorization,
                          NodeConnectionFailure, NodeCreationError,
                          NodeException, NodeNotAvailable, NoNodesAvailable,
                          TrackLoadError)
+from .ext import deezer, spotify
 from .objects import Playlist, Track
-from .regex import (DISCORD_MP3_URL_REGEX, SOUNDCLOUD_URL_REGEX,
-                    SPOTIFY_URL_REGEX, URL_REGEX)
+from .regex import *
 from .utils import ExponentialBackoff, NodeStats, Ping
 
 if TYPE_CHECKING:
@@ -39,7 +37,6 @@ class Node:
        This node object represents a Lavalink node. 
        To enable Spotify searching, pass in a proper Spotify Client ID and Spotify Client Secret
     """
-    use_cache = False
 
     def __init__(
         self,
@@ -54,9 +51,9 @@ class Node:
         heartbeat: int = 30,
         region: Optional[str] = None,
         session: Optional[aiohttp.ClientSession] = None,
-        spotify_client_id: Optional[str] = None,
         spotify_client_secret: Optional[str] = None,
-
+        spotify_client_id: Optional[str] = None,
+        use_deezer: bool = False
     ):
         self._bot = bot
         self._host = host
@@ -90,10 +87,14 @@ class Node:
 
         self._spotify_client_id = spotify_client_id
         self._spotify_client_secret = spotify_client_secret
+        self._use_deezer = use_deezer
 
         if self._spotify_client_id and self._spotify_client_secret:
             self._spotify_client = spotify.Client(
                 self._spotify_client_id, self._spotify_client_secret)
+
+        if self._use_deezer:
+            self._deezer_client = deezer.Client()
 
         self._bot.add_listener(self._update_handler, "on_socket_response")
 
@@ -245,6 +246,9 @@ class Node:
             
         if self._spotify_client_id and self._spotify_client_secret:
             await self._spotify_client.close()
+        
+        if self._use_deezer:
+            await self._deezer_client.close()
 
         await self._websocket.close()
         del self._pool._nodes[self._identifier]
@@ -281,7 +285,8 @@ class Node:
         query: str,
         *,
         ctx: Optional[commands.Context] = None,
-        search_type: SearchType = SearchType.ytsearch
+        search_type: SearchType = SearchType.ytsearch,
+        full: bool = False
     ):
         """Fetches tracks from the node's REST api to parse into Lavalink.
 
@@ -290,6 +295,9 @@ class Node:
 
            You can also pass in a discord.py Context object to get a
            Context object on any track you search.
+
+           If you passed `full=True` then it will fetch all the Track data from
+           the Spotify Client rather than partially 
         """
         if not URL_REGEX.match(query) and not re.match(r"(?:ytm?|sc)search:.", query):
             query = f"{search_type}:{query}"
@@ -302,60 +310,47 @@ class Node:
                     "please obtain Spotify API credentials here: https://developer.spotify.com/"
                 )
 
-            spotify_results = await self._spotify_client.search(query=query)
+            spotify_results = await self._spotify_client.search(query=query, full=full)
 
             if isinstance(spotify_results, spotify.Track):
                 return [
-                    Track(
-                        track_id=spotify_results.id,
-                        ctx=ctx,
-                        search_type=search_type,
-                        spotify=True,
-                        spotify_track=spotify_results,
-                        info={
-                            "title": spotify_results.name,
-                            "author": spotify_results.artists,
-                            "length": spotify_results.length,
-                            "identifier": spotify_results.id,
-                            "uri": spotify_results.uri,
-                            "isStream": False,
-                            "isSeekable": True,
-                            "position": 0,
-                            "thumbnail": spotify_results.image
-                        }
-                    )
+                    Track.from_spotify_track(spotify_results, search_type, ctx)
                 ]
 
-            tracks = [
-                Track(
-                    track_id=track.id,
-                    ctx=ctx,
-                    search_type=search_type,
-                    spotify=True,
-                    spotify_track=track,
-                    info={
-                        "title": track.name,
-                        "author": track.artists,
-                        "length": track.length,
-                        "identifier": track.id,
-                        "uri": track.uri,
-                        "isStream": False,
-                        "isSeekable": True,
-                        "position": 0,
-                        "thumbnail": track.image
-                    }
-                ) if isinstance(track, spotify.Track) else track 
-                  for track in spotify_results.tracks   
-            ]
+            tracks = [Track.from_spotify_track(track, search_type, ctx)
+                      if isinstance(track, spotify.Track) else track # partial tracks
+                      for track in spotify_results.tracks]
             
             return Playlist(
                 playlist_info={"name": spotify_results.name, "selectedTrack": 0},
                 tracks=tracks,
                 ctx=ctx,
-                spotify=True,
-                spotify_playlist=spotify_results
+                other_source=True,
+                source_playlist=spotify_results
             )
-        
+
+        elif DEEZER_URL_REGEX.match(query):
+            if not self._use_deezer:
+                raise 
+            
+            deezer_results = await self._deezer_client.search(query=query)
+
+            if isinstance(deezer_results, deezer.Track):
+                return [
+                    Track.from_deezer_track(deezer_results, search_type, ctx)
+                ]
+            
+            tracks = [Track.from_deezer_track(track, search_type, ctx)
+                      for track in deezer_results.tracks]
+
+            return Playlist(
+                playlist_info={"name": deezer_results.title, "selectTrack": 0},
+                tracks=tracks,
+                ctx=ctx,
+                other_source=True,
+                source_playlist=deezer_results
+            )
+
         elif discord_url := DISCORD_MP3_URL_REGEX.match(query):
             async with self._session.get(
                 url=f"{self._rest_uri}/loadtracks?identifier={quote(query)}",
@@ -476,6 +471,7 @@ class NodePool:
 
         nodes = [node for node in available_nodes 
                  if node._region == voice_region]
+
         if not nodes:
             raise NoNodesAvailable(
                 f"No nodes for region {voice_region} exist in this pool."
