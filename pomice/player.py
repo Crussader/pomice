@@ -2,17 +2,17 @@ import time
 from typing import Any, Dict, Optional
 
 from discord import Client, Guild, VoiceChannel, VoiceProtocol
-
 from discord.ext import commands
 
 from . import events
 from .enums import SearchType
 from .events import PomiceEvent, TrackEndEvent, TrackStartEvent
 from .exceptions import FilterInvalidArgument, TrackInvalidPosition
-from .filters import Filter
+from .filters import CustomFilter, Filter
 from .objects import Track
 from .pool import Node, NodePool
 from .queues import *
+
 
 class Player(VoiceProtocol):
     """The base player class for Pomice.
@@ -30,12 +30,13 @@ class Player(VoiceProtocol):
         return self
 
     def __init__(
-        self, 
-        client: Optional[Client] = None, 
-        channel: Optional[VoiceChannel] = None, 
-        *, 
+        self,
+        client: Optional[Client] = None,
+        channel: Optional[VoiceChannel] = None,
+        *,
         node: Node = None,
-        queue: Queue = None
+        queue: Queue = None,
+        ctx: Optional[commands.Context] = None
     ):
         self.client = client
         self._bot = client
@@ -43,7 +44,7 @@ class Player(VoiceProtocol):
         self._guild = channel.guild if channel else None
 
         self._node = node if node else NodePool.get_node()
-        self._current: TrackType = None
+        self._current: Track = None
         self._filter: Filter = None
         self._volume = 100
         self._paused = False
@@ -56,7 +57,7 @@ class Player(VoiceProtocol):
 
         self._voice_state = {}
 
-        self._queue = queue
+        self._queue = queue(ctx) if ctx else queue
 
     def __repr__(self):
         return (
@@ -174,7 +175,7 @@ class Player(VoiceProtocol):
             return
 
         await self._dispatch_voice_update({**self._voice_state, "event": data})
-    
+
     async def _dispatch_event(self, data: dict):
         event_type = data.get("type")
         event: PomiceEvent = getattr(events, event_type)(data, self)
@@ -186,7 +187,7 @@ class Player(VoiceProtocol):
 
         if isinstance(event, TrackStartEvent):
             self._ending_track = self._current
-    
+
     async def get_tracks(
         self,
         query: str,
@@ -238,12 +239,12 @@ class Player(VoiceProtocol):
 
     async def play(
         self,
-        track: TrackType = None,
+        track: Track = None,
         *,
         start: int = 0,
         end: int = 0,
         ignore_if_playing: bool = False
-    ) -> TrackType:
+    ) -> Track:
         """Plays a track. If a Spotify track is passed in, it will be handled accordingly.
            If nothing is passed on it will play the next song in the queue.
         """
@@ -251,59 +252,38 @@ class Player(VoiceProtocol):
         track = track or self._queue.go_next()
         if isinstance(track, spotify.PartialTracks):
             data = await self.node._spotify_client.search(track._uri, raw=True)
-            data = [spotify.Track(track) for track in data['items']]
 
             pos, _ = self._queue.pop()
-            tracks = [Track(
-                        track_id=track.id,
-                        ctx=None,
-                        search_type=SearchType.ytsearch,
-                        spotify=True,
-                        spotify_track=track,
-                        info={
-                            "title": track.name,
-                            "author": track.artists,
-                            "length": track.length,
-                            "identifier": track.id,
-                            "uri": track.uri,
-                            "isStream": False,
-                            "isSeekable": True,
-                            "position": 0,
-                            "thumbnail": track.image
-                            }
-                        ) for track in data
-                        ]
-            
+            tracks = [Track.from_spotify_track(
+                spotify.Track(track)) for track in data['items']]
+
             self._queue.insert_at(pos, *tracks)
             track = self._queue.current
 
-        if track.spotify:
+        if track.other_source:
             search: Track = (await self._node.get_tracks(
                 f"{track._search_type}:{track.author} - {track.title}",
                 ctx=track.ctx
             ))[0]
             track.original = search
 
-            data = {
-                "op": "play",
-                "guildId": str(self.guild.id),
-                "track": search.track_id,
-                "startTime": str(start),
-                "noReplace": ignore_if_playing
-            }
-        else:
-            data = {
-                "op": "play",
-                "guildId": str(self.guild.id),
-                "track": track.track_id,
-                "startTime": str(start),
-                "noReplace": ignore_if_playing
-            }
+        data = {
+            "op": "play",
+            "guildId": str(self.guild.id),
+            "track": search.track_id if track.other_source else track.track_id,
+            "startTime": str(start),
+            "noReplace": ignore_if_playing
+        }
 
         if end > 0:
             data["endTime"] = str(end)
 
         await self._node.send(**data)
+
+        if not ignore_if_playing:
+            self._current = track
+
+        return self._current
 
     async def seek(self, position: float) -> float:
         """Seeks to a position in the currently playing track milliseconds"""
@@ -327,16 +307,25 @@ class Player(VoiceProtocol):
         self._volume = volume
         return self._volume
 
-    async def set_filter(self, filter: Filter) -> Filter:
+    async def set_filter(self, filter: Filter, *, fast_apply: bool = False) -> Filter:
         """Sets a filter of the player. Takes a pomice.Filter object.
            This will only work if you are using a version of Lavalink that supports filters.
         """
-        await self._node.send(op="filters", guildId=str(self.guild.id), **filter.payload)
-        await self.seek(self.position)
-        self._filter = filter
+        if isinstance(filter, CustomFilter):
+            payload = filter.get_payload()
+        else:
+            payload = filter.payload
+
+        await self._node.send(op="filters", guildId=str(self.guild.id), **payload)
+        if fast_apply:
+            await self.seek(self.position)
+
+        if not isinstance(filter, CustomFilter):
+            self._filter = filter
+
         return filter
 
-    async def reset_filter(self):
+    async def reset_filter(self, *, fast_apply: bool = False, filters: Filter = ()):
         """Resets a currently applied filter to its default parameters.
             You must have a filter applied in order for this to work
         """
@@ -346,7 +335,36 @@ class Player(VoiceProtocol):
                 "You must have a filter applied first in order to use this method."
             )
 
-        _payload: dict = self._filter._reset()
+        if isinstance(self._filter, CustomFilter):
+            _payload: dict = self._filter.reset(filters)    
+        else:
+            _payload: dict = self._filter._reset()
+
         await self._node.send(op="filters", guildId=str(self.guild.id), **_payload)
-        await self.seek(self.position)
+        if fast_apply:
+            await self.seek(self.position)
+
         self._filter = None
+
+    async def edit_filter(self, key: str, value: Union[int, float], *, fast_apply: bool = False, filter: Filter = None):
+        """Edit a Filter which is currently running and `fast_apply` can be used to
+        instantly apply the changes."""
+
+        if not self._filter:
+            raise FilterInvalidArgument(
+                "You must have a filter applied first in order to use this method."
+            )
+        
+        if isinstance(self._filter, CustomFilter):
+            if not filter:
+                raise ValueError("Filter can not be None")
+            self._filter.edit(filter, key, value)
+            _payload = self._filter.get_payload()
+        else:
+            self._filter.edit(key, value)
+            _payload = self._filter.payload
+
+        await self._node.send(op="filters", guildId=str(self.guild.id), **_payload)
+        if fast_apply:
+            await self.seek(self.position)
+        
