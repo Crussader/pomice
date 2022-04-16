@@ -1,4 +1,6 @@
-from .exceptions import FilterInvalidArgument
+from typing import Union
+
+from exceptions import FilterInvalidArgument
 
 
 class Filter:
@@ -9,8 +11,20 @@ class Filter:
     these filters will not work.
     """
 
+    name = None
+
     def __init__(self):
         self.payload = None
+
+    def edit(self, key: str, value: Union[int, float]):
+
+        if not isinstance(key, str):
+            raise TypeError(f"Key must be a string not ({key!r})")
+
+        if not self.name:
+            raise ValueError("Filter must have a name.")
+
+        self.payload[self.name][key] = value
 
     def _reset(self):
         raise NotImplementedError
@@ -23,6 +37,8 @@ class Equalizer(Filter):
     i.e: Applying a bass boost filter to emphasize the bass in a song.
     The format for the levels is: List[Tuple[int, float]]
     """
+
+    name = "equalizer"
 
     def __init__(self, *, levels: list):
         super().__init__()
@@ -59,6 +75,8 @@ class Timescale(Filter):
        i.e: a vaporwave-esque filter which slows the track down
        a certain amount to produce said effect.
     """
+
+    name = "timescale"
 
     def __init__(
         self,
@@ -103,6 +121,8 @@ class Karaoke(Filter):
     """Filter which filters the vocal track from any song and leaves the instrumental.
        Best for karaoke as the filter implies.
     """
+
+    name = "karaoke"
 
     def __init__(
         self,
@@ -149,6 +169,8 @@ class Tremolo(Filter):
        causing it to sound like the music is changing in volume rapidly.
     """
 
+    name = "tremolo"
+
     def __init__(
         self,
         *,
@@ -188,6 +210,8 @@ class Vibrato(Filter):
        but changes in pitch rather than volume.
     """
 
+    name = "vibrato"
+
     def __init__(
         self,
         *,
@@ -221,15 +245,19 @@ class Vibrato(Filter):
     def __repr__(self):
         return f"<Pomice.VibratoFilter frequency={self.frequency} depth={self.depth}>"
 
+
 class Rotation(Filter):
     """Filter which produces a stereo-like panning effect, which sounds like
     the audio is being rotated around the listener's head
     """
 
+    name = "rotation"
+
     def __init__(self, *, rotation_hertz: float = 5):
         super().__init__()
 
         self.rotation_hertz = rotation_hertz
+
         self.payload = {"rotation": {"rotationHz": self.rotation_hertz}}
 
     def _reset(self):
@@ -241,10 +269,13 @@ class Rotation(Filter):
     def __repr__(self) -> str:
         return f"<Pomice.RotationFilter rotation_hertz={self.rotation_hertz}>"
 
+
 class ChannelMix(Filter):
     """Filter which manually adjusts the panning of the audio, which can make
     for some cool effects when done correctly.
     """
+
+    name = "channelMix"
 
     def __init__(
         self,
@@ -274,11 +305,11 @@ class ChannelMix(Filter):
         self.right_to_left = right_to_left
         self.right_to_right = right_to_right
 
-        self.payload = {"channelMix": {"leftToLeft": self.left_to_left, 
-                                        "leftToRight": self.left_to_right, 
-                                        "rightToLeft": self.right_to_left, 
-                                        "rightToRight": self.right_to_right}
-                                        }
+        self.payload = {"channelMix": {"leftToLeft": self.left_to_left,
+                                       "leftToRight": self.left_to_right,
+                                       "rightToLeft": self.right_to_left,
+                                       "rightToRight": self.right_to_right}
+                        }
 
     def _reset(self):
         self.left_to_left: float = 1
@@ -286,29 +317,32 @@ class ChannelMix(Filter):
         self.left_to_right: float = 0
         self.right_to_left: float = 0
 
-        self.payload = {"channelMix": {"leftToLeft": self.left_to_left, 
-                                        "leftToRight": self.left_to_right, 
-                                        "rightToLeft": self.right_to_left, 
-                                        "rightToRight": self.right_to_right}
-                                        }
+        self.payload = {"channelMix": {"leftToLeft": self.left_to_left,
+                                       "leftToRight": self.left_to_right,
+                                       "rightToLeft": self.right_to_left,
+                                       "rightToRight": self.right_to_right}
+                        }
 
         return self.payload
 
     def __repr__(self) -> str:
-        return ( 
-        f"<Pomice.ChannelMix left_to_left={self.left_to_left} left_to_right={self.left_to_right} "
-        f"right_to_left={self.right_to_left} right_to_right={self.right_to_right}>" 
+        return (
+            f"<Pomice.ChannelMix left_to_left={self.left_to_left} left_to_right={self.left_to_right} "
+            f"right_to_left={self.right_to_left} right_to_right={self.right_to_right}>"
         )
+
 
 class Distortion(Filter):
     """Filter which generates a distortion effect. Useful for certain filter implementations where
     distortion is needed. 
     """
 
+    name = "distortion"
+
     def __init__(
         self,
         *,
-        sin_offset: float =  0,
+        sin_offset: float = 0,
         sin_scale: float = 1,
         cos_offset: float = 0,
         cos_scale: float = 1,
@@ -340,7 +374,7 @@ class Distortion(Filter):
         }}
 
     def _reset(self):
-        self.sin_offset: float =  0
+        self.sin_offset: float = 0
         self.sin_scale: float = 1
         self.cos_offset: float = 0
         self.cos_scale: float = 1
@@ -362,32 +396,117 @@ class Distortion(Filter):
 
         return self.payload
 
-
     def __repr__(self) -> str:
         return (
-        f"<Pomice.Distortion sin_offset={self.sin_offset} sin_scale={self.sin_scale}> "
-        f"cos_offset={self.cos_offset} cos_scale={self.cos_scale} tan_offset={self.tan_offset} "
-        f"tan_scale={self.tan_scale} offset={self.offset} scale={self.scale}"
+            f"<Pomice.Distortion sin_offset={self.sin_offset} sin_scale={self.sin_scale}> "
+            f"cos_offset={self.cos_offset} cos_scale={self.cos_scale} tan_offset={self.tan_offset} "
+            f"tan_scale={self.tan_scale} offset={self.offset} scale={self.scale}"
         )
+
 
 class LowPass(Filter):
     """Filter which supresses higher frequencies and allows lower frequencies to pass.
     You can also do this with the Equalizer filter, but this is an easier way to do it.
     """
 
+    name = "lowPass"
+
     def __init__(self, *, smoothing: float = 20):
         super().__init__()
 
         self.smoothing = smoothing
+
         self.payload = {"lowPass": {"smoothing": self.smoothing}}
 
     def _reset(self):
         self.smoothing = 20
         self.payload = {"lowPass": {"smoothing": self.smoothing}}
-        
+
         return self.payload
 
     def __repr__(self) -> str:
         return f"<Pomice.LowPass smoothing={self.smoothing}>"
 
 
+class CustomFilter(Filter):
+    """Filter which allows you to stack Filters and this only accepts Filters
+    subclassed from `Filters` class"""
+
+    name = "customFilter"
+
+    def __init__(self, *filters: Filter):
+        super().__init__()
+
+        self._filters = {}
+
+        for filter in filters:
+            if not isinstance(filter, Filter):
+                raise TypeError(
+                    f"filter must be subclassed from <pomice.Filter> not {filter!r}")
+
+            self._filters[filter.__class__.__name__] = filter
+
+    @property
+    def filters(self):
+        """Return all the Filters currently being used."""
+        return self._filters
+
+    def add_filter(self, *filters: Filter):
+        """Add a Filter to CustomFilter and if the Filter already
+        exists then it is skipped."""
+
+        for filter in filters:
+            if not isinstance(filter, Filter):
+                raise TypeError(
+                    f"filter must be subclassed from <pomice.Filter> not {filter!r}")
+
+            if (name := filter.__class__.__name__) not in filters:
+                self._filters[name] = filter
+
+    def get_payload(self):
+        """Get the combined payload from `CustomFilter._filters`."""
+
+        data = {}
+        for value in self._filters.values():
+            data.update(value.payload)
+
+        return data
+
+    def edit(self, filter: Union[Filter, str], key: str, value: Union[int, float]):
+        """Edit a Filter within the Custom Filters
+        `filter` must be of either the class itself or the name of the class
+        eg:
+
+        CustomFilter.edit(Distortion, key, value)
+        or
+        CustomFilter.edit("Distortion", key, value)
+        """
+
+        if isinstance(filter, str):
+            name = filter
+        elif issubclass(filter, Filter):
+            name = filter.__name__
+        else:
+            raise TypeError("`filter` argument must be of `Filter` or `str`")
+
+        if name not in self._filters:
+            raise KeyError(
+                f"({name}) does not exist in ({', '.join(k for k in self._filters)})")
+
+        self._filters[name].edit(key, value)
+
+    def reset(self, *filters: Filter):
+        """Reset a specific Filter or all Filters."""
+
+        if not filters:
+            filters_reset = self._filters.values()
+        else:
+            filters_reset = (filter for filter in self.filters.values()
+                             if filter.__class__ in filters)
+
+        data = {}
+        for filter in filters_reset:
+            data.update(filter._reset())
+
+        return data
+    
