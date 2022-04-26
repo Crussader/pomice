@@ -3,9 +3,6 @@ from typing import Optional, Union
 
 from discord.ext import commands
 
-# from pomice_rewrite.ext.deezer.objects import Artist
-
-
 from .ext import spotify, deezer
 from .enums import SearchType
 from .regex import SOUNDCLOUD_URL_REGEX
