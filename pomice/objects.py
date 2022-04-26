@@ -1,13 +1,18 @@
-from typing import Optional
+from __future__ import annotations
+from typing import Optional, Union
 
 from discord.ext import commands
 
-from pomice_rewrite.ext.deezer.objects import Artist
+# from pomice_rewrite.ext.deezer.objects import Artist
 
 
 from .ext import spotify, deezer
 from .enums import SearchType
 from .regex import SOUNDCLOUD_URL_REGEX
+
+TrackType = Union[deezer.Track, spotify.Track]
+PlaylistType = Union[deezer.Playlist, deezer.Artist,
+                     deezer.Album, spotify.Playlist, spotify.Album, spotify.Artist]
 
 
 class Track:
@@ -23,7 +28,7 @@ class Track:
         ctx: Optional[commands.Context] = None,
         search_type: SearchType = SearchType.ytsearch,
         other_source: bool = False,
-        source_track = None
+        source_track=None
     ):
         self.track_id = track_id
         self.info = info
@@ -37,7 +42,7 @@ class Track:
         self.author = info.get("author")
         self.uri = info.get("uri")
         self.identifier = info.get("identifier")
-        
+
         if info.get("thumbnail"):
             self.thumbnail = info.get("thumbnail")
         elif SOUNDCLOUD_URL_REGEX.match(self.uri):
@@ -70,66 +75,43 @@ class Track:
         return f"<Pomice.track title={self.title!r} uri=<{self.uri!r}> length={self.length}>"
 
     @classmethod
-    def from_spotify_track(
-        cls, 
-        track: spotify.Track,
-        search_type: SearchType = SearchType.ytsearch,
-        ctx: Optional[commands.Context] = None, 
-    ):
-        """classmethod which converts a `spotify.Track` to `Track`"""
-        
-        if not isinstance(track, spotify.Track):
-            raise TypeError(f"You have to pass a Spotify Track not {track!r}")
-        
-        return cls(
-                track_id=track.id,
-                ctx=ctx,
-                search_type=search_type,
-                other_source=True,
-                source_track=track,
-                info={
-                    "title": track.name,
-                    "author": track.artists,
-                    "length": track.length,
-                    "identifier": track.id,
-                    "uri": track.uri,
-                    "isStream": False,
-                    "isSeekable": True,
-                    "position": 0,
-                    "thumbnail": track.image
-                }
-            )
-
-    @classmethod
-    def from_deezer_track(
+    def from_other_source(
         cls,
-        track: deezer.Track,
+        track: TrackType,
         search_type: SearchType = SearchType.ytsearch,
         ctx: Optional[commands.Context] = None
-    ):
-        """Classmethod which converts a `deezer.Track` to `Track`"""
+    ) -> Track:
+        """Converts a Track from Spotify or deezer into a normal Track."""
 
-        if not isinstance(track, deezer.Track):
+        if isinstance(track, Track):
+            return track
+        elif not isinstance(track, (deezer.Track, spotify.Track)):
             raise TypeError(f"You have to pass a Deezer Track not {track!r}")
-        
-        return cls(
-                track_id=track.id,
-                ctx=ctx,
-                search_type=search_type,
-                other_source=True,
-                source_track=track,
-                info={
-                    "title": track.title,
-                    "author": track.artists,
-                    "lenght": track.duration,
-                    "identifier": track.id,
-                    "uri": track.uri,
-                    "isStream": False,
-                    "isSeekable": True,
-                    "position": 0,
-                    "thumbnail": track.picture.normal
-                }
-            )
+
+        info = {
+            "title": track.title,
+            "author": track.artists,
+            "lenght": track.duration,
+            "identifier": track.id,
+            "uri": track.uri,
+            "isStream": False,
+            "isSeekable": True,
+            "position": 0
+        }
+
+        if isinstance(track, spotify.Track):
+            info["thumbnail"] = track.image
+        elif isinstance(track, deezer.Track):
+            info["thumbnail"] = track.picture.normal
+
+        return Track(
+            track_id=track.id,
+            ctx=ctx,
+            search_type=search_type,
+            other_source=True,
+            source_track=track,
+            info=info
+        )
 
 
 class Playlist:
@@ -145,7 +127,7 @@ class Playlist:
         tracks: list,
         ctx: Optional[commands.Context] = None,
         other_source: bool = False,
-        source_playlist = None
+        source_playlist=None
     ):
         self.playlist_info = playlist_info
         self.tracks_raw = tracks
@@ -155,14 +137,14 @@ class Playlist:
 
         self._thumbnail = None
         self._uri = None
-        
+
         if self.other_source:
             self.tracks = tracks
             if isinstance(self.source_playlist, (spotify.Playlist, spotify.Album, spotify.Artist)):
                 self._thumbnail = self.source_playlist.image
             elif isinstance(self.source_playlist, (deezer.Playlist, deezer.Artist, deezer.Album)):
                 self._thumbnail = self.source_playlist.picture.normal
-                
+
             self._uri = self.source_playlist.uri
         else:
             self.tracks = [
@@ -177,7 +159,10 @@ class Playlist:
         else:
             self.selected_track = self.tracks[index]
 
-        self.track_count = len(self.tracks)
+        self.track_count = source_playlist.total_tracks
+        # self.track_count = len(tracks)
+        # this may not be usefull if there are partial tracks involved
+        # as it would give an inaccurate count.
 
     def __str__(self):
         return self.name
@@ -194,3 +179,24 @@ class Playlist:
     def thumbnail(self) -> Optional[str]:
         """Spotify album/playlist thumbnail, or None if not a Spotify object."""
         return self._thumbnail
+
+    @classmethod
+    def from_other_source(
+        cls,
+        playlist: PlaylistType,
+        search_type: SearchType = SearchType.ytsearch,
+        ctx: Optional[commands.Context] = None
+    ) -> Playlist:
+
+        tracks = [Track.from_other_source(track, search_type, ctx)
+                  # applies to partial tracks and other tracks
+                  if isinstance(track, (spotify.Track, deezer.Track)) else track
+                  for track in playlist.tracks]
+    
+        return Playlist(
+            playlist_info={"name": playlist.name, "selectedTrack": 0},
+            tracks=tracks,
+            ctx=ctx,
+            other_source=True,
+            source_playlist=playlist
+        )
