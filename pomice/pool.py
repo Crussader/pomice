@@ -314,42 +314,23 @@ class Node:
 
             if isinstance(spotify_results, spotify.Track):
                 return [
-                    Track.from_spotify_track(spotify_results, search_type, ctx)
+                    Track.from_other_source(spotify_results, search_type, ctx)
                 ]
 
-            tracks = [Track.from_spotify_track(track, search_type, ctx)
-                      if isinstance(track, spotify.Track) else track # partial tracks
-                      for track in spotify_results.tracks]
-            
-            return Playlist(
-                playlist_info={"name": spotify_results.name, "selectedTrack": 0},
-                tracks=tracks,
-                ctx=ctx,
-                other_source=True,
-                source_playlist=spotify_results
-            )
+            return Playlist.from_other_source(spotify_results, search_type, ctx)
 
         elif DEEZER_URL_REGEX.match(query):
             if not self._use_deezer:
-                raise 
-            
+                raise
+
             deezer_results = await self._deezer_client.search(query=query)
 
             if isinstance(deezer_results, deezer.Track):
                 return [
-                    Track.from_deezer_track(deezer_results, search_type, ctx)
+                    Track.from_other_source(deezer_results, search_type, ctx)
                 ]
-            
-            tracks = [Track.from_deezer_track(track, search_type, ctx)
-                      for track in deezer_results.tracks]
 
-            return Playlist(
-                playlist_info={"name": deezer_results.title, "selectTrack": 0},
-                tracks=tracks,
-                ctx=ctx,
-                other_source=True,
-                source_playlist=deezer_results
-            )
+            return Playlist.from_other_source(deezer_results, search_type, ctx)
 
         elif discord_url := DISCORD_MP3_URL_REGEX.match(query):
             async with self._session.get(
