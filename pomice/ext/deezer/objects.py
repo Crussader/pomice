@@ -37,7 +37,7 @@ class Track:
     def __init__(self, data: dict):
 
         self.id = data.get('id')
-        self.title = Title(data)
+        self.name = Title(data)
         self.uri = data.get('link')
         self.duration = data.get('duration') * 1000  # it comes in seconds
         self.release_date = data.get('release_date')
@@ -47,7 +47,7 @@ class Track:
 
     def __repr__(self) -> str:
         return (f"<pomice.ext.deezer.Track id={self.id} "
-                f"title={self.title} duration={self.duration}>")
+                f"title={self.name} duration={self.duration}>")
 
     def __eq__(self, __o) -> bool:
         return (isinstance(__o, Track) and __o.id == self.id)
@@ -59,18 +59,18 @@ class Album:
     def __init__(self, data: dict):
 
         self.id = data.get('id')
-        self.title = data.get('title')
+        self.name = data.get('title')
         self.uri = data.get('link')
         self.picture = Picture(data)
         self.release_date = data.get('release_date')
         self.explict = data.get('explicit_lyrics')
-        self.track_count = data.get('nb_tracks')
+        self.total_tracks = data.get('nb_tracks')
 
         self.tracks = [Track(i) for i in data['tracks']['data']]
 
     def __repr__(self) -> str:
         return (f"<pomice.ext.deezer.Album id={self.id} "
-                f"title={self.title} cover={self.picture}>")
+                f"title={self.name} cover={self.picture}>")
 
 
 class Artist:
@@ -84,11 +84,11 @@ class Artist:
         self.picture = Picture(data)
 
         self.tracks = tracks
-        self.track_count = len(tracks)
+        self.total_tracks = len(tracks)
 
     def __repr__(self) -> str:
         return (f"<pomice.ext.deezer.Artist id={self.id} "
-                f"name={self.name} uri={self.uri} track_count={self.track_count}>")
+                f"name={self.name} uri={self.uri} track_count={self.total_tracks}>")
 
 
 class Playlist:
@@ -97,9 +97,9 @@ class Playlist:
     def __init__(self, data: dict, tracks) -> None:
 
         self.id = data.get('id')
-        self.title = data.get('title')
+        self.name = data.get('title')
         self.description = data.get('description') or 'None'
-        self.track_count = data.get('nb_tracks')
+        self.total_tracks = data.get('nb_tracks')
         self.picture = Picture(data)
         self.uri = data.get('link')
         self.fans = data.get('fans')
@@ -110,5 +110,5 @@ class Playlist:
 
     def __repr__(self) -> str:
         return (f"<pomice.ext.deezer.Playlist id={self.id} "
-                f"title={self.title} description={self.description} "
-                f"track_count={self.track_count} tracks={self.tracks}>")
+                f"name={self.name} description={self.description} "
+                f"track_count={self.total_tracks} tracks={self.tracks}>")
