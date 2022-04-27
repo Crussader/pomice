@@ -86,7 +86,7 @@ class Track:
             raise TypeError(f"You have to pass a Deezer Track not {track!r}")
 
         info = {
-            "title": track.title,
+            "title": track.name,
             "author": track.artists,
             "lenght": track.duration,
             "identifier": track.id,
