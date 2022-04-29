@@ -206,7 +206,11 @@ class Node:
                 f"The node '{self._identifier}' is unavailable."
             )
 
-        await self._websocket.send_str(json.dumps(data))
+        payload = json.dumps(data)
+        if isinstance(payload, bytes): # if you have orjson
+            payload = payload.decode('utf-8')
+            
+        await self._websocket.send_str(payload)
 
     def get_player(self, guild_id: int):
         """Takes a guild ID as a parameter. Returns a pomice Player object."""
